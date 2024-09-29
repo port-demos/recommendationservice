@@ -87,7 +87,7 @@ jobs:
         identifier: ${{ env.SERVICE_NAME }}:${{ env.RELEASE_VERSION }}
         title: ${{ env.SERVICE_NAME }}:${{ env.RELEASE_VERSION }}
         team: |
-          ["SRE"]
+          ["Developers"]
         properties: |-
             {
               "image_tags":  "${{ env.RELEASE_VERSION }}",
