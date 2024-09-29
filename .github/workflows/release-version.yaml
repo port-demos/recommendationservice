@@ -1,0 +1,108 @@
+name: Create Release and Docker Build
+
+on:
+  repository_dispatch:
+    types: [trigger-build]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    # - uses: port-labs/port-github-action@v1
+    #   env:
+    #     RUN_ID: ${{ github.event.client_payload.action }}_2
+    #   with:
+    #     clientId: ${{ secrets.PORT_CLIENT_ID }}
+    #     clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
+    #     operation: CREATE_RUN
+    #     icon: GithubActions
+    #     blueprint: service
+    #     action: myAction
+    #     identifier: ${{ env.RUN_ID }}
+    #     properties: |-
+    #       {
+    #         "text": "test",
+    #         "number": 1,
+    #         "boolean": true
+
+    #     logMessage: "Building docker image"
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        RELEASE_VERSION: ${{ github.event.client_payload.version }}
+      with:
+        tag_name: v${{ env.RELEASE_VERSION }}
+        release_name: Release v${{ env.RELEASE_VERSION }}
+        draft: false
+        prerelease: false
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v1
+
+    - uses: 'google-github-actions/auth@v2'
+      with:
+        credentials_json: '${{ secrets.GOOGLE_CREDENTIALS }}' # Replace with the name of your GitHub Actions secret
+    
+    - name: 'Set up Cloud SDK'
+      uses: 'google-github-actions/setup-gcloud@v2'
+      with:
+        version: '>= 363.0.0'
+
+    - name: Configure Docker to use gcloud as a credential helper
+      run: |
+        gcloud auth configure-docker
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v2
+      env:
+        SERVICE_NAME: ${{ github.event.client_payload.service_name }}
+        RELEASE_VERSION: ${{ github.event.client_payload.version }}
+        REGISTRY_NAME: ${{ github.event.client_payload.image_registry }}
+      with:
+        context: .
+        push: true
+        tags: gcr.io/sre-playground-378016/${{ env.REGISTRY_NAME }}/${{ env.SERVICE_NAME }}:${{ env.RELEASE_VERSION }}
+
+
+    - name: Create a docker image entity
+      uses: port-labs/port-github-action@v1
+      env:
+        SERVICE_NAME: ${{ github.event.client_payload.service_name }}
+        RELEASE_VERSION: ${{ github.event.client_payload.version }}
+        REGISTRY_NAME: ${{ github.event.client_payload.image_registry }}
+      with:
+        clientId: ${{ secrets.PORT_CLIENT_ID }}
+        clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
+        baseUrl: https://api.getport.io
+        operation: UPSERT
+        icon: "Docker"
+        blueprint:  image
+        identifier: ${{ env.SERVICE_NAME }}:${{ env.RELEASE_VERSION }}
+        title: ${{ env.SERVICE_NAME }}:${{ env.RELEASE_VERSION }}
+        team: |
+          ["SRE"]
+        properties: |-
+            {
+              "image_tags":  "${{ env.RELEASE_VERSION }}",
+              "registry_id":  "${{ env.REGISTRY_NAME }}"
+            }
+
+    # - uses: port-labs/port-github-action@v1
+    #   env:
+    #     RUN_ID: ${{ github.event.client_payload.action }}
+    #   with:
+    #     clientId: ${{ secrets.PORT_CLIENT_ID }}
+    #     clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
+    #     baseUrl: https://api.getport.io
+    #     operation: PATCH_RUN
+    #     runId: ${{ env.RUN_ID }}
+    #     logMessage: "Docker image released! ✅"
+    #     summary: "A new version ${{ env.SERVICE_NAME }} was build and push "
+    #     link: '["gcr.io/sre-playground-378016/${{ env.REGISTRY_NAME }}/${{ env.SERVICE_NAME }}:${{ env.RELEASE_VERSION }}"]'
